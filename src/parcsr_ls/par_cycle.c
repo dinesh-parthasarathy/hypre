@@ -55,6 +55,8 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
    HYPRE_Real      cycle_op_count;
    HYPRE_Int       cycle_type;
    HYPRE_Int       fcycle, fcycle_lev;
+   HYPRE_Int      acycle, n_nodes;
+   HYPRE_Int      *icycling;
    HYPRE_Int       num_levels;
    HYPRE_Int       max_levels;
    HYPRE_Real     *num_coeffs;
@@ -66,6 +68,7 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
 
    /* Local variables  */
    HYPRE_Int      *lev_counter;
+   HYPRE_Int       edge_index;
    HYPRE_Int       Solve_err_flag;
    HYPRE_Int       k;
    HYPRE_Int       i, j, jj;
@@ -154,6 +157,8 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
    cycle_op_count = hypre_ParAMGDataCycleOpCount(amg_data);
 
    lev_counter = hypre_CTAlloc(HYPRE_Int, num_levels, HYPRE_MEMORY_HOST);
+   if (acycle)
+      icycling = hypre_CTAlloc(HYPRE_Int, n_nodes-1, HYPRE_MEMORY_HOST);
 
    if (hypre_ParAMGDataParticipate(amg_data))
    {
@@ -222,6 +227,7 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
    }
    fcycle_lev = num_levels - 2;
 
+   edge_index=0;
    level = 0;
    cycle_param = 1;
 
@@ -641,6 +647,23 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
        *-----------------------------------------------------------------*/
 
       --lev_counter[level];
+
+      /*---------------------------------------------------------------------------
+      * Override lev_counter according to user input for arbitrary cycle structures
+      *--------------------------------------------------------------------------*/ 
+     
+      if (acycle)
+      {
+         if (edge_index==n_nodes-1)
+            {Not_Finished=0; continue;}
+         else if (icycling[edge_index]==-1)
+            lev_counter[level]=0;
+         else if (icycling[edge_index==1])
+            lev_counter[level]=-1;
+         else if (icycling[level]==0)
+            continue; 
+         edge_index++;
+      }
 
       //if ( level != num_levels-1 && lev_counter[level] >= 0 )
       if (lev_counter[level] >= 0 && level != num_levels - 1)
