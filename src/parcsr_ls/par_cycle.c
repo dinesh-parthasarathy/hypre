@@ -55,8 +55,8 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
    HYPRE_Real      cycle_op_count;
    HYPRE_Int       cycle_type;
    HYPRE_Int       fcycle, fcycle_lev;
-   HYPRE_Int      acycle, n_nodes;
-   HYPRE_Int      *icycling;
+   HYPRE_Int      *cycle_struct,*relax_node_types,*node_num_sweeps,cycle_num_nodes;
+   HYPRE_Real     *relax_node_weights;
    HYPRE_Int       num_levels;
    HYPRE_Int       max_levels;
    HYPRE_Real     *num_coeffs;
@@ -126,6 +126,8 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
    num_levels        = hypre_ParAMGDataNumLevels(amg_data);
    max_levels        = hypre_ParAMGDataMaxLevels(amg_data);
    cycle_type        = hypre_ParAMGDataCycleType(amg_data);
+   cycle_struct      = hypre_ParAMGDataCycleStruct(amg_data);
+   cycle_num_nodes   = hypre_ParAMGDataCycleNumNodes(amg_data);
    fcycle            = hypre_ParAMGDataFCycle(amg_data);
 
    A_block_array     = hypre_ParAMGDataABlockArray(amg_data);
@@ -134,9 +136,12 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
    block_mode        = hypre_ParAMGDataBlockMode(amg_data);
 
    num_grid_sweeps     = hypre_ParAMGDataNumGridSweeps(amg_data);
+   node_num_sweeps     = hypre_ParAMGDataNodeNumSweeps(amg_data);
    grid_relax_type     = hypre_ParAMGDataGridRelaxType(amg_data);
    grid_relax_points   = hypre_ParAMGDataGridRelaxPoints(amg_data);
    relax_order         = hypre_ParAMGDataRelaxOrder(amg_data);
+   relax_node_types    = hypre_ParAMGDataRelaxNodeTypes(amg_data);
+   relax_node_weights  = hypre_ParAMGDataRelaxNodeWeights(amg_data);
    relax_weight        = hypre_ParAMGDataRelaxWeight(amg_data);
    omega               = hypre_ParAMGDataOmega(amg_data);
    smooth_type         = hypre_ParAMGDataSmoothType(amg_data);
@@ -153,12 +158,9 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
    min_eig_est = hypre_ParAMGDataMinEigEst(amg_data);
    cheby_fraction = hypre_ParAMGDataChebyFraction(amg_data);*/
    cheby_order = hypre_ParAMGDataChebyOrder(amg_data);
-
    cycle_op_count = hypre_ParAMGDataCycleOpCount(amg_data);
 
    lev_counter = hypre_CTAlloc(HYPRE_Int, num_levels, HYPRE_MEMORY_HOST);
-   if (acycle)
-      icycling = hypre_CTAlloc(HYPRE_Int, n_nodes-1, HYPRE_MEMORY_HOST);
 
    if (hypre_ParAMGDataParticipate(amg_data))
    {
@@ -389,6 +391,15 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
          /*------------------------------------------------------------------
          * Do the relaxation num_sweep times
          *-----------------------------------------------------------------*/
+
+         // set relaxation type and weights for user-defined arbitrary cycles
+         if (cycle_type==4)
+         {
+            relax_type=relax_node_types[edge_index];
+            relax_weight[level] =relax_node_weights[edge_index];
+            num_sweep = node_num_sweeps[edge_index];
+         }
+
          HYPRE_ANNOTATE_REGION_BEGIN("%s", "Relaxation");
          hypre_GpuProfilingPushRange("Relaxation");
 
@@ -652,16 +663,16 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
       * Override lev_counter according to user input for arbitrary cycle structures
       *--------------------------------------------------------------------------*/ 
      
-      if (acycle)
+      if (cycle_type==4)
       {
-         if (edge_index==n_nodes-1)
+         if (edge_index==cycle_num_nodes-1)
             {Not_Finished=0; continue;}
-         else if (icycling[edge_index]==-1)
+         else if (cycle_struct[edge_index]==-1)
             lev_counter[level]=0;
-         else if (icycling[edge_index==1])
+         else if (cycle_struct[edge_index==1])
             lev_counter[level]=-1;
-         else if (icycling[level]==0)
-            continue; 
+         else if (cycle_struct[level]==0)
+            {edge_index++; continue;} 
          edge_index++;
       }
 
