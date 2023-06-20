@@ -239,6 +239,8 @@ main( hypre_int argc,
    HYPRE_Int      CR_use_CG = 0;
    HYPRE_Int      P_max_elmts = 4;
    HYPRE_Int      cycle_type;
+   HYPRE_Int      *cycle_struct,*relax_node_types,*node_num_sweeps,cycle_num_nodes;
+   HYPRE_Real     *relax_node_weights;
    HYPRE_Int      fcycle;
    HYPRE_Int      coarsen_type = 10;
    HYPRE_Int      measure_type = 0;
@@ -1533,7 +1535,35 @@ main( hypre_int argc,
       filter_thresholdR = 0.00;
       trunc_factor = 0.;
       jacobi_trunc_threshold = 0.01;
-      cycle_type = 1;
+      cycle_type = 4;
+      if (cycle_type==4)
+      {
+
+         cycle_num_nodes = 9; // V-cycle with 5 levels
+         HYPRE_Int icycling[] = {-1,-1,-1,-1,1,1,1,1};
+         HYPRE_Int irelaxtypes[] = {13,13,13,13,9,14,14,14,14};
+         HYPRE_Int inumsweeps[] = {1,1,1,1,1,1,1,1,1};
+         HYPRE_Real irelaxwts[] = {1,1,1,1,1,1,1,1,1};
+
+         // allocate memory
+         cycle_struct = hypre_CTAlloc(HYPRE_Int,  cycle_num_nodes-1, HYPRE_MEMORY_HOST);
+         relax_node_types = hypre_CTAlloc(HYPRE_Int,  cycle_num_nodes, HYPRE_MEMORY_HOST);
+         relax_node_weights = hypre_CTAlloc(HYPRE_Real,  cycle_num_nodes, HYPRE_MEMORY_HOST);
+         node_num_sweeps = hypre_CTAlloc(HYPRE_Int,  cycle_num_nodes, HYPRE_MEMORY_HOST);
+
+         // set inputs
+         for(int i=0;i<cycle_num_nodes;i++)
+            {
+               relax_node_types[i] = irelaxtypes[i];
+               node_num_sweeps[i] = inumsweeps[i];
+               relax_node_weights[i] = irelaxwts[i];
+
+               if (i<cycle_num_nodes-1)
+                  cycle_struct[i]=icycling[i];
+            }
+      }
+
+      
       fcycle = 0;
       relax_wt = 1.;
       outer_wt = 1.;
@@ -4147,6 +4177,14 @@ main( hypre_int argc,
       //HYPRE_BoomerAMGSetLogging(amg_solver, 2);
       HYPRE_BoomerAMGSetPrintFileName(amg_solver, "driver.out.log");
       HYPRE_BoomerAMGSetCycleType(amg_solver, cycle_type);
+      if (cycle_type==4)
+      {
+         HYPRE_BoomerAMGSetCycleStruct(amg_solver,cycle_struct,cycle_num_nodes);
+         HYPRE_BoomerAMGSetRelaxNodeTypes(amg_solver,relax_node_types);
+         HYPRE_BoomerAMGSetRelaxNodeWeights(amg_solver,relax_node_weights);
+         HYPRE_BoomerAMGSetNodeNumSweeps(amg_solver,node_num_sweeps);
+      }
+   
       HYPRE_BoomerAMGSetFCycle(amg_solver, fcycle);
       HYPRE_BoomerAMGSetNumSweeps(amg_solver, num_sweeps);
       HYPRE_BoomerAMGSetISType(amg_solver, IS_type);
