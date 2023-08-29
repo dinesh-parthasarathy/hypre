@@ -69,6 +69,9 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
 
    /* Local variables  */
    HYPRE_Int      *lev_counter;
+   HYPRE_Real      *resid_nrm;
+   HYPRE_Real      old_resid_nrm;
+   HYPRE_Int       verbose=1;  /* for additional metrics */
    HYPRE_Int      *cycle_counter;
    HYPRE_Int       edge_index;
    HYPRE_Int       Solve_err_flag;
@@ -165,6 +168,7 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
    cycle_op_count = hypre_ParAMGDataCycleOpCount(amg_data);
 
    lev_counter = hypre_CTAlloc(HYPRE_Int, num_levels, HYPRE_MEMORY_HOST);
+   resid_nrm = hypre_CTAlloc(HYPRE_Real, num_levels, HYPRE_MEMORY_HOST);
    if (cycle_type==3)
       cycle_counter = hypre_CTAlloc(HYPRE_Int, num_levels, HYPRE_MEMORY_HOST);
 
@@ -231,6 +235,14 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
       else
       {
          lev_counter[k] = cycle_type;
+      }
+   }
+
+   if (verbose)
+   {
+      for (k = 1; k < num_levels; ++k)
+      {
+         resid_nrm[k] = 0.0;
       }
    }
    fcycle_lev = num_levels - 2;
@@ -419,6 +431,27 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
 
          HYPRE_ANNOTATE_REGION_BEGIN("%s", "Relaxation");
          hypre_GpuProfilingPushRange("Relaxation");
+
+         /* Initial residual before relaxation*/
+         if (verbose)
+         {
+            alpha = -1.0;
+            beta = 1.0;
+            if (block_mode)
+            {
+               hypre_ParVectorCopy(F_array[level], Vtemp);
+               hypre_ParCSRBlockMatrixMatvec(alpha, A_block_array[level], U_array[level],
+                                             beta, Vtemp);
+            }
+            else
+            {
+               // JSP: avoid unnecessary copy using out-of-place version of SpMV
+               hypre_ParCSRMatrixMatvecOutOfPlace(alpha, A_array[level], U_array[level],
+                                                beta, F_array[level], Vtemp);
+            }
+
+            resid_nrm[level] = hypre_sqrt(hypre_ParVectorInnerProd(Vtemp, Vtemp));
+         }
 
          for (jj = 0; jj < cg_num_sweep; jj++)
          {
@@ -670,6 +703,31 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
          hypre_GpuProfilingPopRange();
       }
 
+      /* Residual after relaxation */
+      if (verbose)
+         {  
+            old_resid_nrm = resid_nrm[level];
+            alpha = -1.0;
+            beta = 1.0;
+            if (block_mode)
+            {
+               hypre_ParVectorCopy(F_array[level], Vtemp);
+               hypre_ParCSRBlockMatrixMatvec(alpha, A_block_array[level], U_array[level],
+                                             beta, Vtemp);
+            }
+            else
+            {
+               // JSP: avoid unnecessary copy using out-of-place version of SpMV
+               hypre_ParCSRMatrixMatvecOutOfPlace(alpha, A_array[level], U_array[level],
+                                                beta, F_array[level], Vtemp);
+            }
+
+            resid_nrm[level] = hypre_sqrt(hypre_ParVectorInnerProd(Vtemp, Vtemp));
+            // print convergence factor
+            if (my_id == 0)
+               hypre_printf("In-Cycle Convergence: %.3f\n", resid_nrm[level]/old_resid_nrm);
+         }
+
       /*------------------------------------------------------------------
        * Decrement the control counter and determine which grid to visit next
        *-----------------------------------------------------------------*/
@@ -734,7 +792,10 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
          }
          HYPRE_ANNOTATE_REGION_END("%s", "Residual");
          hypre_GpuProfilingPopRange();
-
+         if (verbose)
+         {
+            resid_nrm[fine_grid] = hypre_sqrt(hypre_ParVectorInnerProd(Vtemp, Vtemp));
+         }
          alpha = 1.0;
          beta = 0.0;
 
@@ -836,6 +897,28 @@ hypre_BoomerAMGCycle( void              *amg_vdata,
          HYPRE_ANNOTATE_MGLEVEL_END(level);
          hypre_GpuProfilingPopRange();
          hypre_GpuProfilingPopRange();
+         if (verbose)
+         {  
+            old_resid_nrm = resid_nrm[fine_grid];
+            alpha = -1.0;
+            beta = 1.0;
+            if (block_mode)
+            {
+               hypre_ParVectorCopy(F_array[fine_grid], Vtemp);
+               hypre_ParCSRBlockMatrixMatvec(alpha, A_block_array[fine_grid], U_array[fine_grid],
+                                             beta, Vtemp);
+            }
+            else
+            {
+               // JSP: avoid unnecessary copy using out-of-place version of SpMV
+               hypre_ParCSRMatrixMatvecOutOfPlace(alpha, A_array[fine_grid], U_array[fine_grid],
+                                                  beta, F_array[fine_grid], Vtemp);
+            }
+
+            resid_nrm[fine_grid] = hypre_sqrt(hypre_ParVectorInnerProd(Vtemp, Vtemp));
+            if (my_id == 0)
+               hypre_printf("In-Cycle Convergence: %.3f\n", resid_nrm[fine_grid]/old_resid_nrm);
+         }
 
          --level;
          if (cycle_type==3 && lev_counter[level]>0) 
